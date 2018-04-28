@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<config>
+    <http port="8081" host="0.0.0.0"></http>
+    <DataBase>
+        <driver>postgres</driver>
+        <user>postgres</user>
+        <password>postgres</password>
+        <dbname>test</dbname>
+        <host>localhost</host>
+        <port>5432</port>
+        <sslmode>disable</sslmode>
+    </DataBase>
+</config>
+
