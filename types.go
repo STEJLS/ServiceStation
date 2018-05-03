@@ -36,15 +36,16 @@ type Car struct {
 
 //Order - структура, писывающая сущность заказа.
 type Order struct {
-	ID     string
-	Status int
-	CarID  string
-	Month  string
-	Day    string
-	Year   string
-	Cost   string
-	Info   string
-	UserID string
+	ID      string
+	Status  int
+	CarID   string
+	CarInfo string
+	Month   string
+	Day     string
+	Year    string
+	Cost    string
+	Info    string
+	UserID  string
 }
 
 // GetFormarDate - возвращает дату в формате мм-дд-гггг

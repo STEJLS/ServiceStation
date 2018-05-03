@@ -33,6 +33,7 @@ func main() {
 	http.HandleFunc("/logOut", logOutHandler)
 	http.HandleFunc("/getCars", GetCarsHandler)
 	http.HandleFunc("/addOrder", addOrderHandler)
+	http.HandleFunc("/getOrders", getOrdersHandler)
 
 	err := server.ListenAndServe()
 	if err != nil {

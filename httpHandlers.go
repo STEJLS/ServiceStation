@@ -314,18 +314,14 @@ func addOrderHandler(w http.ResponseWriter, r *http.Request) {
 	order.UserID = id
 	order.Status = StatusOpen
 
-	test := order.GetFormatDate()
-
 	_, err := db.Exec("INSERT INTO orders(status, date, cost, carID, userID, info) VALUES($1, $2, $3, $4, $5, $6)",
 		order.Status,
-		test,
+		order.GetFormatDate(),
 		order.Cost,
 		order.CarID,
 		order.UserID,
 		order.Info,
 	)
-
-	//_, err := db.Exec("INSERT INTO orders(status, date, cost, carID, userID, info) VALUES('1', '11-20-2014', '1000', '10', '2', 'fbdsbfiudsbfiudshfidsbif')")
 	if err != nil {
 		log.Printf("Ошибка. При добавлении в БД заказа пользователю(ид = %s): %s\n", id, err.Error())
 		http.Error(w, "Неполадки на сервере, повторите попытку позже.", http.StatusInternalServerError)
@@ -334,4 +330,65 @@ func addOrderHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Инфо. Пользователю (ид = %s) добавлен заказ", id)
 	w.Write([]byte("Заказ успешно добавлен"))
+}
+
+// getOrdersHandler - отдает все заказы пользователя в формате json
+func getOrdersHandler(w http.ResponseWriter, r *http.Request) {
+	id := checkAuthorization(w, r)
+
+	if id == "" {
+		return
+	}
+
+	rows, err := db.Query("SELECT * FROM orders WHERE userid = $1 ORDER BY status, date", id)
+
+	if err != nil {
+		log.Printf("Ошибка. При выборке из БД информации о заказах пользователя(ид =  %s): %s\n", id, err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже.", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	result := make([]*Order, 0)
+	var (
+		brand, model, year string
+		date               time.Time
+	)
+
+	for rows.Next() {
+		order := Order{}
+		err = rows.Scan(&order.ID, &order.Status, &date, &order.Cost, &order.CarID, &order.UserID, &order.Info)
+		if err != nil {
+			log.Printf("Ошибка. При выборке из БД информации о машинах пользователя(ид =  %s): %s\n", id, err.Error())
+			http.Error(w, "Неполадки на сервере, повторите попытку позже.", http.StatusInternalServerError)
+			return
+		}
+
+		order.Month = strconv.Itoa(int(date.Month()))
+		order.Day = strconv.Itoa(date.Day())
+		order.Year = strconv.Itoa(date.Year())
+
+		db.QueryRow("SELECT brand, model, year FROM cars WHERE id = $1", order.CarID).Scan(&brand, &model, &year)
+
+		order.CarInfo = brand + " " + model + "(" + year + ")"
+		result = append(result, &order)
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		log.Println("Ошибка. При маршалинге в json результата: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже.", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Add("Content-type", "application/json;")
+
+	_, err = w.Write(data)
+	if err != nil {
+		log.Println("Ошибка. При отдачи метоинформации: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже.", http.StatusInternalServerError)
+	}
+
+	log.Println("Инфо. Отдача информации о заказах пользователя(ид =  " + id + ") успешно закончена")
+
 }
