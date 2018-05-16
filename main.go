@@ -34,6 +34,9 @@ func main() {
 	http.HandleFunc("/getCars", GetCarsHandler)
 	http.HandleFunc("/addOrder", addOrderHandler)
 	http.HandleFunc("/getOrders", getOrdersHandler)
+	http.HandleFunc("/addMessageToOrder", addMessageToOrderHandler)
+	http.HandleFunc("/getMessages", getMessagesHandler)
+	http.HandleFunc("/addAdminMessage", addAdminMeassageHandler)
 
 	err := server.ListenAndServe()
 	if err != nil {

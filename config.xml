@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <config>
-    <http port="8081" host="0.0.0.0"></http>
+    <http port="8080" host="0.0.0.0"></http>
     <DataBase>
         <driver>postgres</driver>
         <user>postgres</user>

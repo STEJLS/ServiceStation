@@ -1,5 +1,9 @@
 package main
 
+import (
+	"time"
+)
+
 //User - структура, писывающая сущность пользователя.
 type User struct {
 	ID           uint64
@@ -36,16 +40,17 @@ type Car struct {
 
 //Order - структура, писывающая сущность заказа.
 type Order struct {
-	ID      string
-	Status  int
-	CarID   string
-	CarInfo string
-	Month   string
-	Day     string
-	Year    string
-	Cost    string
-	Info    string
-	UserID  string
+	ID              string
+	Status          int
+	CarID           string
+	CarInfo         string
+	Month           string
+	Day             string
+	Year            string
+	Cost            string
+	Info            string
+	UserID          string
+	IsNewMSGForUser bool
 }
 
 // GetFormarDate - возвращает дату в формате мм-дд-гггг
@@ -61,4 +66,12 @@ func (order *Order) GetFormatDate() string {
 	}
 
 	return result + order.Day + "-" + order.Year
+}
+
+//Message - структура, писывающая сущность сообщения в заказе.
+type Message struct {
+	IsAdmin bool
+	Date    time.Time
+	Text    string
+	OrderID string
 }

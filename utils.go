@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/STEJLS/ServiceStation/XMLconfig"
 	_ "github.com/lib/pq"
@@ -29,7 +30,7 @@ func InitFlags() {
 
 // InitLogger - настраивает логгер
 func InitLogger() *os.File {
-	logfile, err := os.OpenFile(logSource, os.O_APPEND|os.O_CREATE, 0666)
+	logfile, err := os.OpenFile(logSource, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
 		log.Fatalln("Ошибка. Файл логов (%q) не открылся: ", logSource, err)
 	}
@@ -109,6 +110,20 @@ func ValidateUser(u *User, regexpForPhone *regexp.Regexp) string {
 
 	if regexpForPhone.MatchString(u.Phone) {
 		//return "Некорректный номер телефона"
+	}
+
+	return ""
+}
+
+//ValidateMessage - проверяет поступившие данные о сообщения на бизнес правила
+func ValidateMessage(message *Message) string {
+
+	if _, err := strconv.Atoi(message.OrderID); err != nil {
+		return "Ошибка. Неверный id заказа."
+	}
+
+	if message.Text == "" {
+		return "Ошибка. Пустой текст сообщения."
 	}
 
 	return ""
@@ -275,6 +290,27 @@ func getAndCheckOrder(w http.ResponseWriter, r *http.Request) *Order {
 	}
 
 	return order
+
+}
+
+// getAndCheckOrder - получает данные о новом заказе из запроса,
+// а так же валидирует параметры.
+func getAndCheckMessage(w http.ResponseWriter, r *http.Request) *Message {
+	message := &Message{
+		IsAdmin: false,
+		Date:    time.Now(),
+		Text:    r.FormValue("text"),
+		OrderID: r.FormValue("orderID"),
+	}
+
+	resultOfValidation := ValidateMessage(message)
+	if resultOfValidation != "" {
+		log.Println("Инфо. Попытка добавить сообщение с невалидными данными: " + resultOfValidation)
+		http.Error(w, resultOfValidation, http.StatusBadRequest)
+		return nil
+	}
+
+	return message
 
 }
 

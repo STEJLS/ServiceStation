@@ -234,7 +234,7 @@ func GetCarsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := db.Query("SELECT * FROM cars WHERE userid = $1", id)
+	rows, err := db.Query("SELECT id, brand, model, vin, year, userid FROM cars WHERE userid = $1 AND deleted = FALSE", id)
 
 	if err != nil {
 		log.Printf("Ошибка. При выборке из БД информации о машинах пользователя(ид =  %s): %s\n", id, err.Error())
@@ -289,8 +289,7 @@ func removeCarHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Необходимо передать id машины, которую вы хотите удалить", http.StatusBadRequest)
 		return
 	}
-
-	_, err := db.Exec(`DELETE FROM cars WHERE id = $1`, carID)
+	_, err := db.Exec(`UPDATE cars SET deleted = TRUE WHERE id = $1`, carID)
 	if err != nil {
 		log.Println("Ошибка. При удалении записи в БД об машине: " + err.Error())
 		http.Error(w, "Неполадки на сервере, повторите попытку позже.", http.StatusInternalServerError)
@@ -340,8 +339,13 @@ func getOrdersHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := db.Query("SELECT * FROM orders WHERE userid = $1 ORDER BY status, date", id)
-
+	var err error
+	var rows *sql.Rows
+	if r.FormValue("isclosed") == "true" {
+		rows, err = db.Query("SELECT * FROM orders WHERE userid = $1 AND status = $2 ORDER BY status, date", id, StatusClosed)
+	} else {
+		rows, err = db.Query("SELECT * FROM orders WHERE userid = $1 AND status != $2 ORDER BY status, date", id, StatusClosed)
+	}
 	if err != nil {
 		log.Printf("Ошибка. При выборке из БД информации о заказах пользователя(ид =  %s): %s\n", id, err.Error())
 		http.Error(w, "Неполадки на сервере, повторите попытку позже.", http.StatusInternalServerError)
@@ -357,7 +361,7 @@ func getOrdersHandler(w http.ResponseWriter, r *http.Request) {
 
 	for rows.Next() {
 		order := Order{}
-		err = rows.Scan(&order.ID, &order.Status, &date, &order.Cost, &order.CarID, &order.UserID, &order.Info)
+		err = rows.Scan(&order.ID, &order.Status, &date, &order.Cost, &order.CarID, &order.UserID, &order.Info, &order.IsNewMSGForUser)
 		if err != nil {
 			log.Printf("Ошибка. При выборке из БД информации о машинах пользователя(ид =  %s): %s\n", id, err.Error())
 			http.Error(w, "Неполадки на сервере, повторите попытку позже.", http.StatusInternalServerError)
@@ -368,7 +372,12 @@ func getOrdersHandler(w http.ResponseWriter, r *http.Request) {
 		order.Day = strconv.Itoa(date.Day())
 		order.Year = strconv.Itoa(date.Year())
 
-		db.QueryRow("SELECT brand, model, year FROM cars WHERE id = $1", order.CarID).Scan(&brand, &model, &year)
+		err = db.QueryRow("SELECT brand, model, year FROM cars WHERE id = $1", order.CarID).Scan(&brand, &model, &year)
+		if err != nil {
+			log.Printf("Ошибка. При выборке из БД информации о машине пользователя(id машины =  %s): %s\n", order.CarID, err.Error())
+			http.Error(w, "Неполадки на сервере, повторите попытку позже.", http.StatusInternalServerError)
+			return
+		}
 
 		order.CarInfo = brand + " " + model + "(" + year + ")"
 		result = append(result, &order)
@@ -391,4 +400,129 @@ func getOrdersHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("Инфо. Отдача информации о заказах пользователя(ид =  " + id + ") успешно закончена")
 
+}
+
+// addMessageToOrderHandler - добавляет сообщение к заказу
+func addMessageToOrderHandler(w http.ResponseWriter, r *http.Request) {
+	id := checkAuthorization(w, r)
+
+	if id == "" {
+		return
+	}
+
+	message := getAndCheckMessage(w, r)
+	if message == nil {
+		return
+	}
+
+	var status int
+	err := db.QueryRow(`SELECT status FROM orders WHERE id = $1 AND userID = $2 LIMIT 1`, message.OrderID, id).Scan(&status)
+	if err == sql.ErrNoRows {
+		log.Println("Инфо. Попытка добавить сообщение к указанному заказу: " + err.Error())
+		http.Error(w, "Невозможно добавить сообщение к указанному заказу.", http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		log.Println("Ошибка. При поиске записи в БД о заказе: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже.", http.StatusInternalServerError)
+		return
+	}
+
+	if status == StatusClosed {
+		log.Println("Инфо. Попытка добавить сообщение к закрытому заказу: ")
+		http.Error(w, "Невозможно добавить сообщение к закрытому заказу.", http.StatusBadRequest)
+		return
+	}
+
+	_, err = db.Exec("INSERT INTO messages(isadmin, date, text, orderid) VALUES(FALSE, $1, $2, $3)", message.Date, message.Text, message.OrderID)
+	if err != nil {
+		log.Printf("Ошибка. При добавлении сообщения к заказу(ид пользователя =  %s,ид заказа =  %s ): %s\n", id, message.OrderID, err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже.", http.StatusInternalServerError)
+		return
+	}
+}
+
+func getMessagesHandler(w http.ResponseWriter, r *http.Request) {
+	id := checkAuthorization(w, r)
+
+	if id == "" {
+		return
+	}
+
+	orderID := r.FormValue("orderID")
+	if _, err := strconv.Atoi(orderID); err != nil {
+		log.Println("Инфо. Попытка получить сообщения заказа с невалидным ID.")
+		http.Error(w, "Ошибка. Получен некорректный номер заказа", http.StatusBadRequest)
+		return
+	}
+
+	err := db.QueryRow(`SELECT id FROM orders WHERE id = $1 AND userID = $2 LIMIT 1`, orderID, id).Scan(&orderID)
+	if err == sql.ErrNoRows {
+		log.Println("Инфо. Попытка получить сообщения заказа, которого нет у пользователя или его вовсе не существует: " + err.Error())
+		http.Error(w, "Укажите верный номер заказа.", http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		log.Println("Ошибка. При поиске записи в БД о заказе: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже.", http.StatusInternalServerError)
+		return
+	}
+
+	rows, err := db.Query(`SELECT * FROM messages WHERE orderid = $1 ORDER BY date`, orderID)
+	if err != nil {
+		log.Printf("Ошибка. При выборке из БД информации о машинах пользователя(ид =  %s): %s\n", id, err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже."+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	result := make([]*Message, 0)
+
+	for rows.Next() {
+		message := Message{}
+		err = rows.Scan(&message.IsAdmin, &message.Date, &message.Text, &message.OrderID)
+		if err != nil {
+			log.Printf("Ошибка. При выборке из БД информации о сообщениях заказа(ид =  %s): %s\n", orderID, err.Error())
+			http.Error(w, "Неполадки на сервере, повторите попытку позже.", http.StatusInternalServerError)
+			return
+		}
+		result = append(result, &message)
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		log.Println("Ошибка. При маршалинге в json результата: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже.", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Add("Content-type", "application/json;")
+
+	_, err = w.Write(data)
+	if err != nil {
+		log.Println("Ошибка. При отдачи метоинформации: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже.", http.StatusInternalServerError)
+	}
+
+	db.Exec("UPDATE orders SET newmsgforuser=FALSE WHERE id=$1", orderID)
+
+	log.Println("Инфо. Отдача информации о сообщения заказа(ид =  " + orderID + ") успешно закончена")
+
+}
+
+// addMessageToOrderHandler - добавляет сообщение к заказу
+func addAdminMeassageHandler(w http.ResponseWriter, r *http.Request) {
+	text := r.FormValue("text")
+	orderID := r.FormValue("orderID")
+	if text == "" || orderID == "" {
+		return
+	}
+
+	_, err := db.Exec("INSERT INTO messages(isadmin, date, text, orderid) VALUES(TRUE, $1, $2, $3)", time.Now(), text, orderID)
+	if err != nil {
+		log.Printf("Ошибка. При добавлении сообщения админа к заказу(ид заказа =  %s ): %s\n", orderID, err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже.", http.StatusInternalServerError)
+		return
+	}
+	db.Exec("UPDATE orders SET newmsgforuser=TRUE WHERE id=$1", orderID)
 }
