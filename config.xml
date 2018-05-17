@@ -6,7 +6,7 @@
         <user>postgres</user>
         <password>postgres</password>
         <dbname>test</dbname>
-        <host>localhost</host>
+        <host>185.159.130.96</host>
         <port>5432</port>
         <sslmode>disable</sslmode>
     </DataBase>

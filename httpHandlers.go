@@ -313,16 +313,24 @@ func addOrderHandler(w http.ResponseWriter, r *http.Request) {
 	order.UserID = id
 	order.Status = StatusOpen
 
-	_, err := db.Exec("INSERT INTO orders(status, date, cost, carID, userID, info) VALUES($1, $2, $3, $4, $5, $6)",
+	err := db.QueryRow("INSERT INTO orders(status, date, cost, carID, userID, info) VALUES($1, $2, $3, $4, $5, $6) RETURNING id",
 		order.Status,
 		order.GetFormatDate(),
 		order.Cost,
 		order.CarID,
 		order.UserID,
 		order.Info,
-	)
+	).Scan(&order.ID)
+
 	if err != nil {
 		log.Printf("Ошибка. При добавлении в БД заказа пользователю(ид = %s): %s\n", id, err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже.", http.StatusInternalServerError)
+		return
+	}
+
+	_, err = db.Exec("INSERT INTO messages(isadmin, date, text, orderid) VALUES(FALSE, $1, $2, $3)", time.Now(), order.Info, order.ID)
+	if err != nil {
+		log.Printf("Ошибка. При добавлении в БД первого сообщения пользователю(ид = %s): %s\n", id, err.Error())
 		http.Error(w, "Неполадки на сервере, повторите попытку позже.", http.StatusInternalServerError)
 		return
 	}
